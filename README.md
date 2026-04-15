@@ -1,16 +1,77 @@
-# React + Vite
+# Storyboard Layout App
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React and Vite workspace for planning Storyline screens, previewing layout patterns, and exporting handoff-ready production materials.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- build storyboard slides across multiple screen types
+- switch layouts while preserving authored content where possible
+- preview Storyline-friendly layouts in real time
+- export current slide specs, production briefs, and PPTX output
+- import storyboard JSON with validation and safe defaults
 
-## React Compiler
+## Local development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Requirements
 
-## Expanding the ESLint configuration
+- Node.js 20.19 or newer
+- npm 10 or newer
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Install
+
+```bash
+npm install
+```
+
+### Start the app
+
+```bash
+npm run dev
+```
+
+### Quality checks
+
+```bash
+npm run check
+```
+
+This runs linting, tests, and the production build.
+
+### End-to-end tests
+
+```bash
+npx playwright install chromium
+npm run e2e
+```
+
+This runs the Playwright smoke tests against the live app.
+
+## Main scripts
+
+- `npm run dev` — start the Vite dev server
+- `npm test` — run the Vitest suite
+- `npm run lint` — run ESLint
+- `npm run build` — create the production bundle
+- `npm run build:analyze` — inspect bundle composition
+- `npm run e2e` — run Playwright end-to-end smoke tests
+- `npm run e2e:headed` — run the browser suite with a visible window
+
+## Project structure
+
+- [src/App.jsx](src/App.jsx) — main workspace shell and app orchestration
+- [src/components/StoryboardSidebar.jsx](src/components/StoryboardSidebar.jsx) — authoring controls and export actions
+- [src/components/slideModel.js](src/components/slideModel.js) — slide defaults, import parsing, and validation logic
+- [src/components/storyline](src/components/storyline) — preview, production brief, and layout rendering components
+- [src/components/storyline/pptx](src/components/storyline/pptx) — PPTX export pipeline
+
+## Production hardening
+
+The active roadmap is tracked in [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md).
+
+## Status
+
+Current baseline is verified for:
+
+- linting
+- unit and integration tests
+- production build generation

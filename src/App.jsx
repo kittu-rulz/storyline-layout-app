@@ -1,368 +1,680 @@
-import React, { useMemo, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Wand2, LayoutTemplate, Download, Palette, Type, Layers3 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PreviewCanvas } from "@/components/storyline/PreviewCanvas";
+import { ProductionBrief } from "@/components/storyline/ProductionBrief";
+import { StoryboardSidebar } from "@/components/StoryboardSidebar";
+import {
+  createFormActions,
+  createInitialFormState,
+} from "@/components/storylineFormState";
+import { generateSpec } from "@/components/storyline/generateSpec";
+import { getResolvedSlideSize } from "@/components/storyline/slideSize";
+import {
+  cloneSlideForDuplicate,
+  createStoryboardSlide,
+  parseImportedStoryboardPayload,
+  sanitizeSavedSlide,
+  STORYBOARD_SCHEMA_VERSION,
+  validateSlideForExport,
+} from "@/components/slideModel";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { layoutOptions } from "@/data/layoutOptions";
+import { safeAreaPresets } from "@/data/safeAreaPresets";
+import { slideSizePresets } from "@/data/slideSizes";
+import { screenTypes } from "@/data/screenTypes";
+import { themes } from "@/data/themes";
 
-const screenTypes = {
-  title: {
-    name: 'Title / Section Screen',
-    description: 'Hero-style intro screen with title, subtitle, and CTA.',
-    defaults: {
-      title: 'Welcome to the Course',
-      body: 'Build confidence with a clean visual introduction and a clear next step.',
-      cta: 'Continue',
-      layout: 'hero-center',
-    },
-  },
-  content: {
-    name: 'Content Screen',
-    description: 'Structured learning screen with title, text, and media area.',
-    defaults: {
-      title: 'Supply Chain Visibility',
-      body: 'Use this area for body copy, key learning points, or short process explanations. The layout is designed to import cleanly into Storyline as a visual guide.',
-      cta: 'Next',
-      layout: 'text-left-image-right',
-    },
-  },
-  interaction: {
-    name: 'Interaction Screen',
-    description: 'Click-and-reveal style layout with hotspots and an information panel.',
-    defaults: {
-      title: 'Explore the Interface',
-      body: 'Click each hotspot to learn more about the feature. This layout helps you plan an interaction before building triggers in Storyline.',
-      cta: 'Explore',
-      layout: 'grid-hotspots',
-    },
-  },
-  quiz: {
-    name: 'Knowledge Check',
-    description: 'Question-and-options layout for quiz or checkpoint slides.',
-    defaults: {
-      title: 'Which statement is correct?',
-      body: 'Choose the best answer based on what you just learned.',
-      cta: 'Submit',
-      layout: 'mcq-standard',
-    },
-  },
+const STORYBOARD_STORAGE_KEY = "storyline-layout-app.storyboard.v1";
+const STORYBOARD_BACKUP_STORAGE_KEY = `${STORYBOARD_STORAGE_KEY}.backup`;
+const PREVIEW_ZOOM_OPTIONS = ["50", "75", "100", "125"];
+const NOTICE_STYLES = {
+  success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  error: "border-rose-200 bg-rose-50 text-rose-800",
+  info: "border-blue-200 bg-blue-50 text-blue-800",
 };
 
-const themes = {
-  corporate: {
-    name: 'Corporate Blue',
-    page: 'bg-slate-100',
-    surface: 'bg-white',
-    accent: 'bg-blue-600',
-    accentSoft: 'bg-blue-50',
-    accentText: 'text-blue-700',
-    border: 'border-blue-200',
-    button: 'bg-blue-600 hover:bg-blue-700',
-  },
-  emerald: {
-    name: 'Emerald',
-    page: 'bg-emerald-50',
-    surface: 'bg-white',
-    accent: 'bg-emerald-600',
-    accentSoft: 'bg-emerald-100',
-    accentText: 'text-emerald-700',
-    border: 'border-emerald-200',
-    button: 'bg-emerald-600 hover:bg-emerald-700',
-  },
-  violet: {
-    name: 'Violet',
-    page: 'bg-violet-50',
-    surface: 'bg-white',
-    accent: 'bg-violet-600',
-    accentSoft: 'bg-violet-100',
-    accentText: 'text-violet-700',
-    border: 'border-violet-200',
-    button: 'bg-violet-600 hover:bg-violet-700',
-  },
-};
+function toSlug(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
 
-function generateSpec({ screenType, title, body, cta, theme, slideSize }) {
-  const base = {
-    slideSize,
-    margins: '64px',
-    titleFont: '32px / SemiBold',
-    bodyFont: '18px / Regular',
-    buttonStyle: 'Rounded rectangle, 14px radius',
-    theme: themes[theme].name,
-  };
-
-  const specs = {
-    title: {
-      ...base,
-      structure: 'Centered hero layout with title, subtitle, supporting shape, and CTA button',
-      zones: ['Top progress marker', 'Center headline', 'Subhead', 'Primary CTA'],
-    },
-    content: {
-      ...base,
-      structure: 'Two-column layout with text panel on the left and visual/media panel on the right',
-      zones: ['Header', 'Body content area', 'Media placeholder', 'Footer navigation'],
-    },
-    interaction: {
-      ...base,
-      structure: 'Hotspot grid with four clickable items and a detail panel below',
-      zones: ['Header', 'Interactive hotspot row', 'Detail reveal area', 'Navigation controls'],
-    },
-    quiz: {
-      ...base,
-      structure: 'Question block with four answer options and submit button',
-      zones: ['Question area', 'Answer list', 'Feedback area', 'Submit control'],
-    },
-  };
-
+function createDefaultStoryboardState() {
+  const firstSlide = createStoryboardSlide();
   return {
-    screenType: screenTypes[screenType].name,
-    title,
-    body,
-    cta,
-    ...specs[screenType],
+    slides: [firstSlide],
+    activeSlideId: firstSlide.id,
+    saveStatus: "All changes saved locally",
+    notice: null,
   };
 }
 
-function PreviewCanvas({ form }) {
-  const t = themes[form.theme];
+function createPersistedStoryboardPayload(slides, activeSlideId) {
+  return {
+    schemaVersion: STORYBOARD_SCHEMA_VERSION,
+    savedAt: new Date().toISOString(),
+    slides,
+    activeSlideId,
+  };
+}
 
-  if (form.screenType === 'title') {
-    return (
-      <div className={`w-full aspect-video rounded-3xl border shadow-sm overflow-hidden ${t.surface}`}>
-        <div className={`h-4 ${t.accent}`} />
-        <div className="h-full p-10 flex flex-col items-center justify-center text-center gap-5">
-          <Badge className={`${t.accentSoft} ${t.accentText} border-0`}>Section Intro</Badge>
-          <h2 className="text-4xl font-bold max-w-3xl">{form.title}</h2>
-          <p className="text-slate-600 max-w-2xl text-lg leading-relaxed">{form.body}</p>
-          <Button className={`${t.button} text-white rounded-2xl px-6`}>{form.cta}</Button>
-        </div>
-      </div>
-    );
+function getLoadedStoryboardState(parsed, options = {}) {
+  if (!parsed || !Array.isArray(parsed.slides) || parsed.slides.length === 0) {
+    return createDefaultStoryboardState();
   }
 
-  if (form.screenType === 'content') {
-    return (
-      <div className={`w-full aspect-video rounded-3xl border shadow-sm overflow-hidden ${t.surface}`}>
-        <div className="grid grid-cols-12 h-full">
-          <div className="col-span-6 p-8 flex flex-col">
-            <Badge className={`w-fit ${t.accentSoft} ${t.accentText} border-0 mb-4`}>Content</Badge>
-            <h2 className="text-3xl font-bold mb-4">{form.title}</h2>
-            <p className="text-slate-600 leading-7">{form.body}</p>
-            <div className="mt-auto pt-6">
-              <Button className={`${t.button} text-white rounded-2xl`}>{form.cta}</Button>
-            </div>
-          </div>
-          <div className={`col-span-6 m-8 rounded-3xl border-2 border-dashed ${t.border} ${t.accentSoft} flex items-center justify-center`}>
-            <div className="text-center">
-              <Layers3 className={`mx-auto mb-3 ${t.accentText}`} />
-              <p className={`font-medium ${t.accentText}`}>Image / Illustration Placeholder</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  const slides = parsed.slides.map((slide) => sanitizeSavedSlide(slide));
+  const activeSlideId =
+    typeof parsed.activeSlideId === "string" &&
+    slides.some((slide) => slide.id === parsed.activeSlideId)
+      ? parsed.activeSlideId
+      : slides[0].id;
+
+  return {
+    slides,
+    activeSlideId,
+    saveStatus: options.recoveredFromBackup
+      ? "Recovered your storyboard from backup"
+      : "All changes saved locally",
+    notice: options.recoveredFromBackup
+      ? {
+          tone: "info",
+          message: "Recovered your storyboard from backup after a save issue.",
+        }
+      : null,
+  };
+}
+
+function loadStoryboardState() {
+  if (typeof window === "undefined") {
+    return createDefaultStoryboardState();
   }
 
-  if (form.screenType === 'interaction') {
-    return (
-      <div className={`w-full aspect-video rounded-3xl border shadow-sm overflow-hidden ${t.surface} p-8`}>
-        <h2 className="text-3xl font-bold mb-2">{form.title}</h2>
-        <p className="text-slate-600 mb-6">{form.body}</p>
-        <div className="grid grid-cols-4 gap-4 mb-6">
-          {[1, 2, 3, 4].map((n) => (
-            <div key={n} className={`rounded-3xl ${t.accentSoft} border ${t.border} h-28 flex items-center justify-center font-semibold ${t.accentText}`}>
-              Hotspot {n}
-            </div>
-          ))}
-        </div>
-        <div className={`rounded-3xl border ${t.border} p-6 h-40 flex items-center justify-center text-slate-500`}>
-          Reveal / Feedback Panel
-        </div>
-      </div>
-    );
-  }
+  try {
+    const raw = window.localStorage.getItem(STORYBOARD_STORAGE_KEY);
+    if (!raw) {
+      return createDefaultStoryboardState();
+    }
 
-  return (
-    <div className={`w-full aspect-video rounded-3xl border shadow-sm overflow-hidden ${t.surface} p-8`}>
-      <Badge className={`${t.accentSoft} ${t.accentText} border-0 mb-4`}>Knowledge Check</Badge>
-      <h2 className="text-3xl font-bold mb-3">{form.title}</h2>
-      <p className="text-slate-600 mb-6">{form.body}</p>
-      <div className="space-y-3 mb-6">
-        {['Option 1', 'Option 2', 'Option 3', 'Option 4'].map((opt) => (
-          <div key={opt} className="rounded-2xl border p-4 flex items-center gap-3">
-            <div className="w-4 h-4 rounded-full border" />
-            <span>{opt}</span>
-          </div>
-        ))}
-      </div>
-      <Button className={`${t.button} text-white rounded-2xl`}>{form.cta}</Button>
-    </div>
-  );
+    const parsed = JSON.parse(raw);
+    return getLoadedStoryboardState(parsed);
+  } catch (error) {
+    console.error("Failed to load storyboard from localStorage", error);
+
+    try {
+      const backupRaw = window.localStorage.getItem(STORYBOARD_BACKUP_STORAGE_KEY);
+      if (!backupRaw) {
+        return createDefaultStoryboardState();
+      }
+
+      const backupParsed = JSON.parse(backupRaw);
+      return getLoadedStoryboardState(backupParsed, { recoveredFromBackup: true });
+    } catch (backupError) {
+      console.error("Failed to load storyboard backup from localStorage", backupError);
+      return {
+        ...createDefaultStoryboardState(),
+        notice: {
+          tone: "error",
+          message: "Saved storyboard data could not be restored. Starting with a fresh workspace.",
+        },
+      };
+    }
+  }
 }
 
 export default function StorylineLayoutGenerator() {
-  const [form, setForm] = useState({
-    screenType: 'content',
-    title: screenTypes.content.defaults.title,
-    body: screenTypes.content.defaults.body,
-    cta: screenTypes.content.defaults.cta,
-    theme: 'corporate',
-    slideSize: '16:9 (1920 x 1080)',
-  });
+  const initialStoryboardState = useMemo(() => loadStoryboardState(), []);
+  const [slides, setSlides] = useState(() => initialStoryboardState.slides);
+  const [activeSlideId, setActiveSlideId] = useState(
+    () => initialStoryboardState.activeSlideId,
+  );
+  const [previewZoom, setPreviewZoom] = useState("100");
+  const [importError, setImportError] = useState("");
+  const [workspaceTab, setWorkspaceTab] = useState("preview");
+  const [appNotice, setAppNotice] = useState(() => initialStoryboardState.notice);
+  const [saveStatus, setSaveStatus] = useState(
+    () => initialStoryboardState.saveStatus || "All changes saved locally",
+  );
 
-  const spec = useMemo(() => generateSpec(form), [form]);
+  const form =
+    slides.find((slide) => slide.id === activeSlideId) ?? slides[0] ?? createInitialFormState();
+  const currentTheme = themes[form.theme] ?? themes.corporate;
+  const currentLayoutOptions = layoutOptions[form.screenType] || [];
+  const selectedLayoutLabel =
+    currentLayoutOptions.find((option) => option.value === form.layout)?.label ||
+    form.layout;
+  const currentSlideSize = getResolvedSlideSize(form);
+  const spec = generateSpec(form);
+  const screenTypePart = toSlug(form.screenType) || "screen";
+  const layoutPart = toSlug(selectedLayoutLabel) || "layout";
+  const exportBaseName = `${screenTypePart}-${layoutPart}`;
 
-  const applyScreenType = (value) => {
-    const preset = screenTypes[value].defaults;
-    setForm((prev) => ({
-      ...prev,
-      screenType: value,
-      title: preset.title,
-      body: preset.body,
-      cta: preset.cta,
-    }));
+  const setActiveSlideForm = useCallback(
+    (nextValueOrUpdater) => {
+      setSlides((prevSlides) =>
+        prevSlides.map((slide) => {
+          if (slide.id !== activeSlideId) return slide;
+
+          const nextSlide =
+            typeof nextValueOrUpdater === "function"
+              ? nextValueOrUpdater(slide)
+              : nextValueOrUpdater;
+
+          return {
+            ...nextSlide,
+            id: slide.id,
+          };
+        }),
+      );
+    },
+    [activeSlideId],
+  );
+
+  const formActions = useMemo(
+    () => createFormActions(setActiveSlideForm),
+    [setActiveSlideForm],
+  );
+
+  const pushNotice = useCallback((tone, message) => {
+    setAppNotice({
+      id: `${tone}-${Date.now()}`,
+      tone,
+      message,
+    });
+  }, []);
+
+  const ensureCurrentSlideCanExport = useCallback(
+    (label) => {
+      const validation = validateSlideForExport(form);
+      if (validation.valid) {
+        return true;
+      }
+
+      pushNotice(
+        "error",
+        `${label} unavailable. ${validation.issues.slice(0, 3).join(" ")}`,
+      );
+      return false;
+    },
+    [form, pushNotice],
+  );
+
+  const ensureStoryboardCanExport = useCallback(
+    (label) => {
+      for (let index = 0; index < slides.length; index += 1) {
+        const validation = validateSlideForExport(slides[index]);
+        if (!validation.valid) {
+          pushNotice(
+            "error",
+            `${label} unavailable. Slide ${index + 1}: ${validation.issues[0]}`,
+          );
+          return false;
+        }
+      }
+
+      return true;
+    },
+    [pushNotice, slides],
+  );
+
+  useEffect(() => {
+    if (!appNotice) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setAppNotice(null);
+    }, 4500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [appNotice]);
+
+  const handleOpenBrief = () => {
+    setWorkspaceTab("spec");
   };
 
+  const handleExportSpec = () => {
+    if (!ensureCurrentSlideCanExport("Spec export")) {
+      return;
+    }
+
+    try {
+      const payload = {
+        meta: {
+          app: "storyline-layout-app",
+          schemaVersion: STORYBOARD_SCHEMA_VERSION,
+          exportType: "slide-spec",
+          exportedAt: new Date().toISOString(),
+        },
+        screenType: form.screenType,
+        layout: form.layout,
+        title: form.title,
+        body: form.body,
+        cta: form.cta,
+        theme: form.theme,
+        slideSize: {
+          label: currentSlideSize.label,
+          width: currentSlideSize.width,
+          height: currentSlideSize.height,
+        },
+        safeMargins: {
+          top: form.safeMargins.top,
+          bottom: form.safeMargins.bottom,
+          left: form.safeMargins.left,
+          right: form.safeMargins.right,
+        },
+        designerNotes: form.notes,
+        dynamicContent: {
+          titleHighlights: form.titleHighlights,
+          contentBlocks: form.contentBlocks,
+          objectivesItems: form.objectivesItems,
+          comparisonRows: form.comparisonRows,
+          timelineEvents: form.timelineEvents,
+          summaryPoints: form.summaryPoints,
+          scenarioOptions: form.scenarioOptions,
+          reflectionChecks: form.reflectionChecks,
+          quizOptions: form.quizOptions,
+          hotspotItems: form.hotspotItems,
+          tabsItems: form.tabsItems,
+          accordionSections: form.accordionSections,
+          processSteps: form.processSteps,
+        },
+      };
+
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${exportBaseName}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      pushNotice("success", "Spec JSON exported.");
+    } catch (error) {
+      console.error("Failed to export spec JSON", error);
+      pushNotice("error", "Spec export failed. Please try again.");
+    }
+  };
+
+  const handleExportBrief = () => {
+    if (!ensureCurrentSlideCanExport("Production brief export")) {
+      return;
+    }
+
+    try {
+      const screenTypeName = screenTypes[form.screenType]?.name || form.screenType;
+      const themeName = themes[form.theme]?.name || form.theme;
+      const notes = form.notes?.trim() || "No production notes added.";
+      const dynamicItems = Array.isArray(spec?.content?.dynamicItems)
+        ? spec.content.dynamicItems
+        : [];
+
+      const brief = [
+        "Screen Type",
+        `${screenTypeName} (${form.screenType})`,
+        "",
+        "Layout Style",
+        `${selectedLayoutLabel} (${form.layout})`,
+        "",
+        "Content",
+        `Title: ${form.title}`,
+        `Body: ${form.body}`,
+        `CTA: ${form.cta}`,
+        `Slide Size: ${currentSlideSize.label}`,
+        ...(dynamicItems.length > 0
+          ? ["Dynamic Items:", ...dynamicItems.map((item) => `- ${item}`)]
+          : []),
+        "",
+        "Safe Margins",
+        `Top: ${form.safeMargins.top}px`,
+        `Bottom: ${form.safeMargins.bottom}px`,
+        `Left: ${form.safeMargins.left}px`,
+        `Right: ${form.safeMargins.right}px`,
+        "",
+        "Theme",
+        themeName,
+        "",
+        "Notes",
+        notes,
+        "",
+      ].join("\n");
+
+      const blob = new Blob([brief], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${exportBaseName}-production-brief.txt`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      pushNotice("success", "Production brief exported.");
+    } catch (error) {
+      console.error("Failed to export production brief", error);
+      pushNotice("error", "Production brief export failed. Please try again.");
+    }
+  };
+
+  const handleExportPptx = async () => {
+    if (!ensureStoryboardCanExport("Storyboard PPTX export")) {
+      return;
+    }
+
+    try {
+      const { exportStoryboardToPptx } = await import(
+        "@/components/storyline/pptx/exportStoryboardToPptx"
+      );
+      await exportStoryboardToPptx(slides, {
+        fileName: `storyboard-${slides.length}-slides.pptx`,
+        title: "Storyboard Export",
+      });
+      pushNotice("success", "Storyboard PPTX exported.");
+    } catch (error) {
+      console.error("Failed to export PPTX", error);
+      pushNotice("error", "Storyboard PPTX export failed. Please try again.");
+    }
+  };
+
+  const handleExportCurrentSlidePptx = async () => {
+    if (!ensureCurrentSlideCanExport("Current slide PPTX export")) {
+      return;
+    }
+
+    try {
+      const { exportCurrentSlideToPptx } = await import(
+        "@/components/storyline/pptx/exportCurrentSlideToPptx"
+      );
+      await exportCurrentSlideToPptx(form, {
+        fileName: `${exportBaseName}.pptx`,
+        title: "Current Layout Export",
+      });
+      pushNotice("success", "Current slide PPTX exported.");
+    } catch (error) {
+      console.error("Failed to export current slide PPTX", error);
+      pushNotice("error", "Current slide PPTX export failed. Please try again.");
+    }
+  };
+
+  const handleImportStoryboardJson = async (file) => {
+    if (!file) return;
+
+    try {
+      const rawText = await file.text();
+      let parsed = null;
+
+      try {
+        parsed = JSON.parse(rawText);
+      } catch {
+        throw new Error("Invalid JSON file. Please upload a valid storyboard JSON.");
+      }
+
+      const imported = parseImportedStoryboardPayload(parsed);
+      setSlides(imported.slides);
+      setActiveSlideId(imported.activeSlideId);
+      setImportError("");
+      pushNotice("success", `Storyboard imported with ${imported.slides.length} slide${imported.slides.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      const message =
+        error?.message ||
+        "Could not import storyboard. Please check the JSON file and try again.";
+      setImportError(message);
+      pushNotice("error", message);
+    }
+  };
+
+  const handleCreateSlide = () => {
+    const newSlide = createStoryboardSlide(form.screenType);
+    setSlides((prev) => [...prev, newSlide]);
+    setActiveSlideId(newSlide.id);
+    pushNotice("success", "New slide added to the storyboard.");
+  };
+
+  const handleSelectSlide = (slideId) => {
+    setActiveSlideId(slideId);
+  };
+
+  const handleDuplicateSlide = (slideId) => {
+    setSlides((prev) => {
+      const index = prev.findIndex((slide) => slide.id === slideId);
+      if (index < 0) return prev;
+
+      const duplicated = cloneSlideForDuplicate(prev[index]);
+      const next = [...prev];
+      next.splice(index + 1, 0, duplicated);
+      setActiveSlideId(duplicated.id);
+      return next;
+    });
+    pushNotice("success", "Slide duplicated.");
+  };
+
+  const handleDeleteSlide = (slideId) => {
+    const slideToDelete = slides.find((slide) => slide.id === slideId);
+
+    if (slides.length <= 1) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${slideToDelete?.title?.trim() || "Untitled slide"}" from the storyboard?`,
+    );
+
+    if (!confirmed) {
+      pushNotice("info", "Slide deletion canceled.");
+      return;
+    }
+
+    setSlides((prev) => {
+      const index = prev.findIndex((slide) => slide.id === slideId);
+      if (index < 0) return prev;
+
+      const next = prev.filter((slide) => slide.id !== slideId);
+      if (slideId === activeSlideId) {
+        const fallbackIndex = Math.max(0, index - 1);
+        const nextActive = next[fallbackIndex] || next[0];
+        setActiveSlideId(nextActive.id);
+      }
+
+      return next;
+    });
+
+    pushNotice("success", "Slide removed from the storyboard.");
+  };
+
+  const handleMoveSlideUp = (slideId) => {
+    setSlides((prev) => {
+      const index = prev.findIndex((slide) => slide.id === slideId);
+      if (index <= 0) return prev;
+
+      const next = [...prev];
+      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      return next;
+    });
+  };
+
+  const handleMoveSlideDown = (slideId) => {
+    setSlides((prev) => {
+      const index = prev.findIndex((slide) => slide.id === slideId);
+      if (index < 0 || index >= prev.length - 1) return prev;
+
+      const next = [...prev];
+      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    setSaveStatus("Saving changes locally…");
+
+    try {
+      const payload = JSON.stringify(
+        createPersistedStoryboardPayload(slides, activeSlideId),
+      );
+      window.localStorage.setItem(STORYBOARD_STORAGE_KEY, payload);
+      window.localStorage.setItem(STORYBOARD_BACKUP_STORAGE_KEY, payload);
+      setSaveStatus("All changes saved locally");
+    } catch (error) {
+      console.error("Failed to save storyboard to localStorage", error);
+      setSaveStatus("Local save unavailable");
+      pushNotice(
+        "error",
+        "Autosave failed in this browser session. Continue working, then export your storyboard manually.",
+      );
+    }
+  }, [activeSlideId, pushNotice, slides]);
+
   return (
-    <div className={`min-h-screen ${themes[form.theme].page} p-6 md:p-10`}>
-      <div className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-6">
-        <Card className="lg:col-span-4 rounded-3xl shadow-sm border-0">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <LayoutTemplate className="w-6 h-6" />
-              Storyline Layout Generator
-            </CardTitle>
-            <p className="text-slate-600 text-sm">
-              Generate planning-friendly screen layouts for Storyline slides and export a clear visual specification.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="space-y-2">
-              <Label>Screen Type</Label>
-              <Select value={form.screenType} onValueChange={applyScreenType}>
-                <SelectTrigger className="rounded-2xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(screenTypes).map(([key, value]) => (
-                    <SelectItem key={key} value={key}>{value.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-slate-500">{screenTypes[form.screenType].description}</p>
-            </div>
+    <div
+      className={`min-h-screen ${currentTheme.page} p-4 md:p-6 lg:h-screen lg:overflow-hidden`}
+    >
+      {appNotice ? (
+        <div
+          role={appNotice.tone === "error" ? "alert" : "status"}
+          aria-live={appNotice.tone === "error" ? "assertive" : "polite"}
+          className={`mx-auto mb-4 flex max-w-[1560px] items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-sm ${NOTICE_STYLES[appNotice.tone] || NOTICE_STYLES.info}`}
+        >
+          <p>{appNotice.message}</p>
+          <button
+            type="button"
+            className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80 transition-opacity hover:opacity-100"
+            onClick={() => setAppNotice(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
-            <div className="space-y-2">
-              <Label>Slide Title</Label>
-              <Input
-                className="rounded-2xl"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-              />
-            </div>
+      <div className="mx-auto grid max-w-[1560px] gap-5 lg:h-full lg:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] lg:items-stretch">
+        <StoryboardSidebar
+          form={form}
+          formActions={formActions}
+          saveStatus={saveStatus}
+          slides={slides}
+          activeSlideId={activeSlideId}
+          onSelectSlide={handleSelectSlide}
+          onCreateSlide={handleCreateSlide}
+          onDuplicateSlide={handleDuplicateSlide}
+          onDeleteSlide={handleDeleteSlide}
+          onMoveSlideUp={handleMoveSlideUp}
+          onMoveSlideDown={handleMoveSlideDown}
+          layoutOptionsMap={layoutOptions}
+          currentLayoutOptions={currentLayoutOptions}
+          slideSizePresets={slideSizePresets}
+          safeAreaPresets={safeAreaPresets}
+          screenTypes={screenTypes}
+          themes={themes}
+          onOpenBrief={handleOpenBrief}
+          onExportSpec={handleExportSpec}
+          onExportBrief={handleExportBrief}
+          onExportCurrentPptx={handleExportCurrentSlidePptx}
+          onExportPptx={handleExportPptx}
+          onImportStoryboardJson={handleImportStoryboardJson}
+          importError={importError}
+          workspaceTab={workspaceTab}
+        />
 
-            <div className="space-y-2">
-              <Label>Body Copy</Label>
-              <Textarea
-                className="rounded-2xl min-h-28"
-                value={form.body}
-                onChange={(e) => setForm({ ...form, body: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Button Label</Label>
-              <Input
-                className="rounded-2xl"
-                value={form.cta}
-                onChange={(e) => setForm({ ...form, cta: e.target.value })}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2"><Palette className="w-4 h-4" /> Theme</Label>
-                <Select value={form.theme} onValueChange={(value) => setForm({ ...form, theme: value })}>
-                  <SelectTrigger className="rounded-2xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(themes).map(([key, value]) => (
-                      <SelectItem key={key} value={key}>{value.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2"><Type className="w-4 h-4" /> Slide Size</Label>
-                <Select value={form.slideSize} onValueChange={(value) => setForm({ ...form, slideSize: value })}>
-                  <SelectTrigger className="rounded-2xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="16:9 (1920 x 1080)">16:9 (1920 x 1080)</SelectItem>
-                    <SelectItem value="4:3 (1280 x 960)">4:3 (1280 x 960)</SelectItem>
-                    <SelectItem value="Custom Story Size">Custom Story Size</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button className={`rounded-2xl text-white ${themes[form.theme].button}`}>
-                <Wand2 className="w-4 h-4 mr-2" /> Generate
-              </Button>
-              <Button variant="outline" className="rounded-2xl">
-                <Download className="w-4 h-4 mr-2" /> Export Spec
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="lg:col-span-8 space-y-6">
-          <Tabs defaultValue="preview" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 rounded-2xl">
-              <TabsTrigger value="preview" className="rounded-2xl">Preview</TabsTrigger>
-              <TabsTrigger value="spec" className="rounded-2xl">Layout Spec</TabsTrigger>
+        <div className="min-w-0 lg:h-full">
+          <Tabs
+            value={workspaceTab}
+            onValueChange={setWorkspaceTab}
+            className="w-full lg:flex lg:h-full lg:flex-col"
+          >
+            <TabsList
+              className={`grid w-full grid-cols-2 rounded-2xl p-1 ring-1 ${currentTheme.surface} ${currentTheme.surfaceBorder}`}
+            >
+              <TabsTrigger value="preview" className="rounded-xl">
+                Preview
+              </TabsTrigger>
+              <TabsTrigger value="spec" className="rounded-xl">
+                Production Brief
+              </TabsTrigger>
             </TabsList>
-            <TabsContent value="preview" className="mt-4">
-              <Card className="rounded-3xl shadow-sm border-0">
-                <CardContent className="p-5 md:p-6">
-                  <PreviewCanvas form={form} />
+
+            <TabsContent value="preview" className="mt-4 lg:mt-3 lg:min-h-0 lg:flex-1">
+              <Card
+                className={`rounded-3xl border shadow-sm lg:h-full ${currentTheme.surface} ${currentTheme.surfaceBorder}`}
+              >
+                <CardContent className="p-4 md:p-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+                  <div
+                    className={`mb-4 rounded-2xl border p-4 ${currentTheme.surfaceMuted} ${currentTheme.surfaceBorder}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className={`text-sm font-semibold ${currentTheme.textStrong}`}>
+                          Preview
+                        </h3>
+                        <p className={`text-xs ${currentTheme.textMuted}`}>
+                          Slide size: {currentSlideSize.width} x {currentSlideSize.height} px
+                        </p>
+                      </div>
+                      <div className="w-[110px]">
+                        <Select value={previewZoom} onValueChange={setPreviewZoom}>
+                          <SelectTrigger className="h-9 rounded-xl" aria-label="Preview zoom">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PREVIEW_ZOOM_OPTIONS.map((zoom) => (
+                              <SelectItem key={zoom} value={zoom}>
+                                {zoom}%
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <Button
+                        type="button"
+                        variant={form.showSafeGrid ? "secondary" : "outline"}
+                        size="sm"
+                        className="rounded-xl"
+                        onClick={() =>
+                          formActions.updateField("showSafeGrid", !form.showSafeGrid)
+                        }
+                      >
+                        {form.showSafeGrid ? "Hide production guides" : "Show production guides"}
+                      </Button>
+                      <p className={`text-xs ${currentTheme.textMuted}`}>
+                        Fine-tune labels, rulers, and grid density from the Production Guides
+                        section in the sidebar.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`min-h-0 flex-1 overflow-auto rounded-2xl border p-2 ${currentTheme.surfaceMuted} ${currentTheme.surfaceBorder}`}
+                  >
+                    <div
+                      className="mx-auto min-w-[280px] transition-[width] duration-200 ease-out"
+                      style={{ width: `${previewZoom}%` }}
+                    >
+                      <PreviewCanvas
+                        key={`${form.id}-${form.screenType}-${form.layout}`}
+                        form={form}
+                      />
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
-            <TabsContent value="spec" className="mt-4">
-              <Card className="rounded-3xl shadow-sm border-0">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <div>
-                      <h3 className="text-2xl font-semibold">Generated Layout Specification</h3>
-                      <p className="text-slate-600 text-sm">Use this as a build guide for Storyline or as the basis for later PPT/SVG export.</p>
-                    </div>
-                    <Badge variant="secondary" className="rounded-full px-3 py-1">{spec.screenType}</Badge>
-                  </div>
 
-                  <div className="grid md:grid-cols-2 gap-4">
-                    {Object.entries(spec).map(([key, value]) => (
-                      <div key={key} className="rounded-2xl border p-4 bg-slate-50">
-                        <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">{key}</div>
-                        {Array.isArray(value) ? (
-                          <div className="flex flex-wrap gap-2">
-                            {value.map((item) => (
-                              <Badge key={item} variant="secondary" className="rounded-full">{item}</Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-slate-800 leading-6">{value}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+            <TabsContent value="spec" className="mt-4 lg:mt-3 lg:min-h-0 lg:flex-1">
+              <Card
+                className={`rounded-3xl border shadow-sm lg:h-full ${currentTheme.surface} ${currentTheme.surfaceBorder}`}
+              >
+                <CardContent className="p-6 lg:h-full lg:overflow-y-auto lg:pr-4">
+                  <ProductionBrief spec={spec} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -372,3 +684,4 @@ export default function StorylineLayoutGenerator() {
     </div>
   );
 }
+
