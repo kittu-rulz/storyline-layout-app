@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PreviewCanvas } from "@/components/storyline/PreviewCanvas";
+import { useStoryboardNotices } from "@/features/storyboard/hooks/useStoryboardNotices";
 import { ProductionBrief } from "@/components/storyline/ProductionBrief";
 import { StoryboardSidebar } from "@/components/StoryboardSidebar";
 import {
@@ -140,7 +141,9 @@ export default function StorylineLayoutGenerator() {
   const [previewZoom, setPreviewZoom] = useState("100");
   const [importError, setImportError] = useState("");
   const [workspaceTab, setWorkspaceTab] = useState("preview");
-  const [appNotice, setAppNotice] = useState(() => initialStoryboardState.notice);
+  const { appNotice, dismissNotice, pushNotice } = useStoryboardNotices(
+    initialStoryboardState.notice,
+  );
   const [saveStatus, setSaveStatus] = useState(
     () => initialStoryboardState.saveStatus || "All changes saved locally",
   );
@@ -184,14 +187,6 @@ export default function StorylineLayoutGenerator() {
     [setActiveSlideForm],
   );
 
-  const pushNotice = useCallback((tone, message) => {
-    setAppNotice({
-      id: `${tone}-${Date.now()}`,
-      tone,
-      message,
-    });
-  }, []);
-
   const ensureCurrentSlideCanExport = useCallback(
     (label) => {
       const validation = validateSlideForExport(form);
@@ -225,16 +220,6 @@ export default function StorylineLayoutGenerator() {
     },
     [pushNotice, slides],
   );
-
-  useEffect(() => {
-    if (!appNotice) return undefined;
-
-    const timeoutId = window.setTimeout(() => {
-      setAppNotice(null);
-    }, 4500);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [appNotice]);
 
   const handleOpenBrief = () => {
     setWorkspaceTab("spec");
@@ -547,7 +532,7 @@ export default function StorylineLayoutGenerator() {
           <button
             type="button"
             className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80 transition-opacity hover:opacity-100"
-            onClick={() => setAppNotice(null)}
+            onClick={dismissNotice}
           >
             Dismiss
           </button>
