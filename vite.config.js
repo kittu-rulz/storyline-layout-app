@@ -6,8 +6,18 @@ import { visualizer } from "rollup-plugin-visualizer";
 
 export default defineConfig(({ mode }) => {
   const isAnalyzeBuild = mode === "analyze";
+  const repositoryName = process.env.GITHUB_REPOSITORY?.split("/")[1];
+  const isUserSite = repositoryName?.endsWith(".github.io");
+  const base = process.env.GITHUB_ACTIONS
+    ? isUserSite
+      ? "/"
+      : repositoryName
+        ? `/${repositoryName}/`
+        : "/"
+    : "/";
 
   return {
+    base,
     plugins: [
       react(),
       tailwindcss(),

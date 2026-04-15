@@ -64,6 +64,19 @@ This runs the Playwright smoke tests against the live app.
 - [src/components/storyline](src/components/storyline) — preview, production brief, and layout rendering components
 - [src/components/storyline/pptx](src/components/storyline/pptx) — PPTX export pipeline
 
+## Deployment
+
+This repo is now set up for GitHub Pages deployment.
+
+After pushing to your default branch:
+
+- open your GitHub repository settings
+- go to Pages
+- ensure the build source is GitHub Actions
+- wait for the deployment workflow to finish
+
+Your live app will then be available from the Pages URL shown in GitHub.
+
 ## Production hardening
 
 The active roadmap is tracked in [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md).
