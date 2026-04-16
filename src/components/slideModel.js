@@ -14,6 +14,10 @@ import {
   getSlideSizePreset,
   sanitizeCustomSlideSizeValue,
 } from "@/components/storyline/slideSize";
+import {
+  getDefaultTemplateId,
+  getTemplateById,
+} from "@/features/storyboard/templates";
 
 export const DEFAULT_SCREEN_TYPE = "content";
 export const FALLBACK_SCREEN_TYPE = "content";
@@ -247,6 +251,58 @@ function hasMeaningfulValue(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function cloneTemplateValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => (item && typeof item === "object" ? { ...item } : item));
+  }
+
+  if (value && typeof value === "object") {
+    return { ...value };
+  }
+
+  return value;
+}
+
+function getTemplateFieldDefaults(template) {
+  const defaults = { ...(template?.defaultContent ?? {}) };
+
+  for (const section of template?.formSchema?.sections ?? []) {
+    for (const field of section.fields ?? []) {
+      if (field.defaultValue !== undefined && defaults[field.id] === undefined) {
+        defaults[field.id] = cloneTemplateValue(field.defaultValue);
+      }
+    }
+  }
+
+  return defaults;
+}
+
+function shouldApplyTemplateDefault(currentValue, defaultValue) {
+  if (Array.isArray(defaultValue)) {
+    return !Array.isArray(currentValue) || currentValue.length === 0;
+  }
+
+  if (typeof defaultValue === "string") {
+    return !hasMeaningfulValue(currentValue);
+  }
+
+  if (typeof defaultValue === "boolean") {
+    return typeof currentValue !== "boolean";
+  }
+
+  if (defaultValue && typeof defaultValue === "object") {
+    return !currentValue || typeof currentValue !== "object";
+  }
+
+  return currentValue === undefined || currentValue === null;
+}
+
+function resolveTemplateId(screenType, layout, templateId) {
+  return getTemplateById(templateId)
+    ? templateId
+    : getDefaultTemplateId({ screenType, layout });
+}
+
 export function validateSlideForExport(slide) {
   const issues = [];
 
@@ -350,6 +406,10 @@ export function createInitialFormState(screenType = DEFAULT_SCREEN_TYPE) {
     safeMargins: { ...BASE_FORM_STATE.safeMargins },
     ...buildDynamicCollectionDefaults(defaults),
     screenType,
+    templateId: getDefaultTemplateId({
+      screenType,
+      layout: defaults.layout,
+    }),
     title: defaults.title,
     body: defaults.body,
     cta: defaults.cta,
@@ -360,15 +420,43 @@ export function createInitialFormState(screenType = DEFAULT_SCREEN_TYPE) {
 export function changeScreenTypePreservingContent(prev, screenType) {
   const defaults = getScreenDefaults(screenType);
 
+  const layout = getValidLayoutForScreen(screenType, prev.layout);
+
   return {
     ...prev,
     ...mergeDynamicCollectionState(prev, defaults),
     screenType,
+    templateId: resolveTemplateId(screenType, layout, prev.templateId),
     title: hasMeaningfulValue(prev.title) ? prev.title : defaults.title,
     body: hasMeaningfulValue(prev.body) ? prev.body : defaults.body,
     cta: hasMeaningfulValue(prev.cta) ? prev.cta : defaults.cta,
-    layout: getValidLayoutForScreen(screenType, prev.layout),
+    layout,
   };
+}
+
+export function applyTemplatePreservingContent(prev, templateId) {
+  const template = getTemplateById(templateId);
+  if (!template) {
+    return prev;
+  }
+
+  const next = changeScreenTypePreservingContent(prev, template.screenType);
+  const nextLayout = getValidLayoutForScreen(template.screenType, template.layout);
+  const nextState = {
+    ...next,
+    layout: nextLayout,
+    templateId: template.id,
+  };
+
+  const templateDefaults = getTemplateFieldDefaults(template);
+
+  return Object.entries(templateDefaults).reduce((acc, [fieldId, defaultValue]) => {
+    if (shouldApplyTemplateDefault(acc[fieldId], defaultValue)) {
+      acc[fieldId] = cloneTemplateValue(defaultValue);
+    }
+
+    return acc;
+  }, nextState);
 }
 
 export function createSlideId() {
@@ -539,6 +627,7 @@ export function sanitizeSavedSlide(rawSlide, options = {}) {
         : createSlideId(),
     ...mergedCollections,
     screenType,
+    templateId: resolveTemplateId(screenType, layout, rawSlide?.templateId),
     layout,
     theme: validTheme,
     title: typeof rawSlide?.title === "string" ? rawSlide.title : base.title,

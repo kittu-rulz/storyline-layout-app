@@ -1,4 +1,5 @@
 import {
+  applyTemplatePreservingContent,
   buildDynamicCollectionDefaults,
   changeScreenTypePreservingContent,
   createInitialFormState,
@@ -8,6 +9,7 @@ import {
   getScreenDefaults,
   sanitizeCustomSlideSizeValue,
 } from "@/components/slideModel";
+import { getDefaultTemplateId } from "@/features/storyboard/templates";
 import {
   DEFAULT_SAFE_AREA_PRESET as DEFAULT_SAFE_AREA_VALUE,
   safeAreaPresets,
@@ -40,6 +42,10 @@ export function createFormActions(setForm) {
     setForm((prev) => ({
       ...prev,
       layout,
+      templateId: getDefaultTemplateId({
+        screenType: prev.screenType,
+        layout,
+      }),
     }));
   };
 
@@ -50,11 +56,44 @@ export function createFormActions(setForm) {
     }));
   };
 
+  const applyTemplate = (templateId) => {
+    setForm((prev) => applyTemplatePreservingContent(prev, templateId));
+  };
+
   const updateField = (field, value) => {
     setForm((prev) => ({
       ...prev,
       [field]: value,
     }));
+  };
+
+  const updateRepeaterItem = (field, index, key, value) => {
+    updateArrayItem(field, index, key, value);
+  };
+
+  const addRepeaterItem = (field, item) => {
+    setForm((prev) => {
+      const current = Array.isArray(prev[field]) ? prev[field] : [];
+
+      return {
+        ...prev,
+        [field]: [...current, cloneFieldValue(item)],
+      };
+    });
+  };
+
+  const removeRepeaterItem = (field, index, minItems = 1) => {
+    setForm((prev) => {
+      const current = Array.isArray(prev[field]) ? prev[field] : [];
+      if (current.length <= minItems) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [field]: current.filter((_, itemIndex) => itemIndex !== index),
+      };
+    });
   };
 
   const updateCustomSlideSize = (dimension, value) => {
@@ -310,6 +349,10 @@ export function createFormActions(setForm) {
         body: defaults.body,
         cta: defaults.cta,
         layout: defaults.layout,
+        templateId: getDefaultTemplateId({
+          screenType: prev.screenType || DEFAULT_SCREEN_TYPE,
+          layout: defaults.layout,
+        }),
         safeAreaPreset: DEFAULT_SAFE_AREA_VALUE,
         safeMargins: { ...DEFAULT_SAFE_MARGINS },
         customSlideSize: cloneFieldValue(nextDefaults.customSlideSize),
@@ -321,7 +364,11 @@ export function createFormActions(setForm) {
     switchScreenType,
     switchLayoutStyle,
     switchSlideSizePreset,
+    applyTemplate,
     updateField,
+    updateRepeaterItem,
+    addRepeaterItem,
+    removeRepeaterItem,
     updateCustomSlideSize,
     applySafeAreaPreset,
     updateSafeMargin,

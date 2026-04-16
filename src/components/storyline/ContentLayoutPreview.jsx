@@ -88,7 +88,10 @@ function DetailCard({ t, title, body }) {
   return (
     <div className={`rounded-[28px] border p-5 ${t.surfaceMuted} ${t.surfaceBorder}`}>
       <div className="flex items-center gap-2">
-        <Icon className={`h-4 w-4 ${t.accentText}`} />
+        <span
+          aria-hidden="true"
+          className={`inline-block h-2.5 w-2.5 rounded-full ${t.accentSoft}`}
+        />
         <p className={`text-sm font-semibold ${t.accentText}`}>{title}</p>
       </div>
       <p className={`mt-3 text-sm leading-6 ${t.textBody}`}>{body}</p>

@@ -12,6 +12,7 @@ import { TabsInteractionLayoutPreview } from "@/components/storyline/TabsInterac
 import { TimelineLayoutPreview } from "@/components/storyline/TimelineLayoutPreview";
 import { getSlideAspectRatioStyle } from "@/components/storyline/slideSize";
 import { TitleLayoutPreview } from "@/components/storyline/TitleLayoutPreview";
+import { resolveTemplateForSlide } from "@/features/storyboard/templates";
 import { themes } from "@/data/themes";
 
 const PREVIEW_COMPONENTS = {
@@ -33,7 +34,12 @@ const PREVIEW_COMPONENTS = {
 export function PreviewCanvas({ form }) {
   const theme = themes[form.theme] ?? themes.corporate;
   const frameStyle = getSlideAspectRatioStyle(form);
-  const ActivePreview = PREVIEW_COMPONENTS[form.screenType] || QuizLayoutPreview;
+  const resolvedTemplate = resolveTemplateForSlide(form);
+  const previewComponentKey = resolvedTemplate?.preview?.componentKey || form.screenType;
+  const ActivePreview =
+    PREVIEW_COMPONENTS[previewComponentKey] ||
+    PREVIEW_COMPONENTS[form.screenType] ||
+    QuizLayoutPreview;
 
   return <ActivePreview form={form} t={theme} frameStyle={frameStyle} />;
 }
